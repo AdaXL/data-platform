@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-platform
+  labels:
+    app: data-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: data-platform
+  template:
+    metadata:
+      labels:
+        app: data-platform
+    spec:
+      containers:
+      - name: data-platform
+        image: your-docker-image:latest
+        ports:
+        - containerPort: 80
+        env:
+        - name: ENV_VARIABLE
+          valueFrom:
+            configMapKeyRef:
+              name: your-config-map
+              key: your-key
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+      imagePullSecrets:
+      - name: your-image-pull-secret

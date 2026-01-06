@@ -1,0 +1,23 @@
+name: data_platform
+version: 1.0.0
+config-version: 2
+
+profile: data_platform
+
+source-paths: ["models"]
+analysis-paths: ["analysis"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+
+models:
+  +materialized: view
+
+seeds:
+  +header: true
+
+snapshots:
+  +target_database: your_database_name
+  +target_schema: your_schema_name
+
+# Add additional configurations as needed.
