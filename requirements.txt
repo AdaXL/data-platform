@@ -6,4 +6,5 @@ dbt
 pytest
 jupyter
 docker-compose
-```
+streamlit
+kaggle

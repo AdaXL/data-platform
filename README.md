@@ -3,16 +3,20 @@
 ## Overview
 This data platform project is designed to facilitate the ingestion, processing, storage, and analysis of data. It integrates various components to create a robust architecture for handling data workflows.
 
+Recently updated to include analysis of the **Meta Kaggle** dataset, visualized using a Streamlit application.
+
 ## Project Structure
 The project is organized into several key directories:
 
 - **src**: Contains the source code for data ingestion, processing, storage, and models.
   - **ingestion**: Handles data ingestion from various sources.
     - **connectors**: Contains connectors for different data sources.
+    - **kaggle_downloader.py**: Script to download the Meta Kaggle dataset.
   - **processing**: Manages data processing tasks, both batch and streaming.
   - **storage**: Defines the schema and documentation for data storage solutions.
   - **models**: Contains data transformation functions.
   - **common**: Includes utility functions used across the project.
+  - **app.py**: Streamlit application for visualizing the data.
 
 - **infra**: Contains infrastructure as code configurations.
   - **terraform**: Terraform scripts for provisioning infrastructure.
@@ -53,13 +57,23 @@ To get started with the project, follow these steps:
    ```
    cp configs/.env.example .env
    ```
+   
+   **Note**: You will need to set up your Kaggle API credentials. Place your `kaggle.json` file in `~/.kaggle/` or set the `KAGGLE_USERNAME` and `KAGGLE_KEY` environment variables.
 
-4. Run the application using Docker:
+4. Download the Meta Kaggle dataset:
+   ```
+   python src/ingestion/kaggle_downloader.py
+   ```
+
+5. Run the Streamlit application:
+   ```
+   streamlit run src/app.py
+   ```
+
+6. (Optional) Run the rest of the platform using Docker:
    ```
    docker-compose up
    ```
-
-5. Access the application and start working with your data.
 
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.

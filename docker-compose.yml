@@ -2,13 +2,17 @@ version: '3.8'
 
 services:
   web:
-    build: ./src
+    build: 
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "5000:5000"
-    environment:
-      - ENV=development
+      - "8501:8501"
     volumes:
-      - ./src:/app
+      - ./src:/app/src
+      - ./data:/app/data
+    environment:
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
     depends_on:
       - db
 
