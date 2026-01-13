@@ -1,82 +1,80 @@
-# Data Platform Project
+# KaggleMind: An Autonomous Agentic SQL Analyst
 
 ## Overview
-This data platform project is designed to facilitate the ingestion, processing, storage, and analysis of data. It integrates various components to create a robust architecture for handling data workflows.
+KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. It allows users to ask natural language questions, which are then converted into SQL queries, executed against a DuckDB backend, and visualized using Streamlit.
 
-Recently updated to include analysis of the **Meta Kaggle** dataset, visualized using a Streamlit application.
+## Architecture
+- **Data Tier**:
+    - **Ingestion**: Airflow orchestrates daily downloads of Meta Kaggle data.
+    - **Transformation**: PySpark cleans and converts CSVs to Parquet.
+    - **Warehouse**: DuckDB for fast local analytical queries.
+- **AI Tier**:
+    - **Orchestration**: LangGraph (planned) for multi-agent workflows.
+    - **LLM**: Integration with advanced LLMs for SQL generation and insight extraction.
+- **Frontend**: Streamlit with Plotly for interactive visualizations.
 
 ## Project Structure
-The project is organized into several key directories:
-
-- **src**: Contains the source code for data ingestion, processing, storage, and models.
-  - **ingestion**: Handles data ingestion from various sources.
-    - **connectors**: Contains connectors for different data sources.
-    - **kaggle_downloader.py**: Script to download the Meta Kaggle dataset.
-  - **processing**: Manages data processing tasks, both batch and streaming.
-  - **storage**: Defines the schema and documentation for data storage solutions.
-  - **models**: Contains data transformation functions.
-  - **common**: Includes utility functions used across the project.
-  - **app.py**: Streamlit application for visualizing the data.
-
-- **infra**: Contains infrastructure as code configurations.
-  - **terraform**: Terraform scripts for provisioning infrastructure.
-  - **k8s**: Kubernetes deployment configurations.
-
-- **orchestration**: Manages orchestration of data workflows.
-  - **airflow**: Contains Airflow DAGs for ETL processes.
-
-- **dbt**: Contains dbt models and project configuration for data transformations.
-
-- **analytics**: Includes reports and analysis tools.
-
-- **docs**: Documentation for the architecture and usage of the platform.
-
-- **tests**: Contains unit and integration tests for the project.
-
-- **scripts**: Utility scripts for deployment and management.
-
-- **configs**: Configuration files for environment settings.
-
-- **.github**: GitHub workflows for CI/CD.
+- **src**:
+  - **ingestion**: `kaggle_downloader.py` for fetching data.
+  - **processing**: `data_cleaner.py` for Spark-based transformation.
+  - **app.py**: Streamlit application.
+- **orchestration**: Airflow DAGs.
 
 ## Getting Started
-To get started with the project, follow these steps:
 
-1. Clone the repository:
-   ```
+### Prerequisites
+- Python 3.8+
+- Java (for PySpark)
+- Kaggle API credentials
+
+### Setup
+
+1. **Clone the repository:**
+   ```bash
    git clone <repository-url>
    cd data-platform
    ```
 
-2. Install the required dependencies:
-   ```
+2. **Install dependencies:**
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. Set up your environment variables by copying the example configuration:
-   ```
+3. **Set up environment variables:**
+   ```bash
    cp configs/.env.example .env
    ```
+   Ensure `KAGGLE_USERNAME` and `KAGGLE_KEY` are set.
+
+4. **Run the Data Pipeline:**
+   You can run the scripts manually or via Airflow.
    
-   **Note**: You will need to set up your Kaggle API credentials. Place your `kaggle.json` file in `~/.kaggle/` or set the `KAGGLE_USERNAME` and `KAGGLE_KEY` environment variables.
-
-4. Download the Meta Kaggle dataset:
-   ```
+   **Manual:**
+   ```bash
+   # Download data
    python src/ingestion/kaggle_downloader.py
+   
+   # Process data
+   python src/processing/data_cleaner.py
    ```
 
-5. Run the Streamlit application:
-   ```
+5. **Run the Application:**
+   ```bash
    streamlit run src/app.py
    ```
 
-6. (Optional) Run the rest of the platform using Docker:
-   ```
-   docker-compose up
-   ```
+### Docker
+Run the full stack:
+```bash
+docker-compose up --build
+```
 
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
+## Roadmap
+- [x] Data Ingestion & Processing
+- [x] Basic Streamlit UI
+- [ ] LangGraph Multi-Agent System
+- [ ] Semantic Layer & Vector DB
+- [ ] FastAPI Backend
 
 ## License
-This project is licensed under the MIT License. See the LICENSE file for more details.
+MIT
