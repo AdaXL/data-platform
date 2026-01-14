@@ -18,10 +18,10 @@ def load_data_into_duckdb(con, data_path='data/processed'):
         return False
     
     tables = {
-        'users': 'users',
+        # 'users': 'users',
         'competitions': 'competitions',
-        'user_achievements': 'user_achievements',
-        'forum_messages': 'forum_messages',
+        # 'user_achievements': 'user_achievements',
+        # 'forum_messages': 'forum_messages',
         'user_followers': 'user_followers'
     }
     
@@ -68,14 +68,14 @@ def main():
         
         # Placeholder for Agent Logic
         # In a real implementation, this would call the LangGraph agent
-        
+
         # Mock SQL generation for demonstration
         st.markdown("### Agent Thought Trace")
         st.markdown("""
         1. **Planner**: Identified need for `Users`, `UserAchievements`, and `ForumMessages`.
         2. **Coder**: Generating SQL to join these tables and calculate conversion rate.
         """)
-        
+
         mock_sql = """
         -- This is a placeholder SQL query
         SELECT 
@@ -107,7 +107,7 @@ def main():
             except Exception as e:
                 st.warning(f"Could not execute generated SQL against current data: {e}")
                 st.info("Displaying mock data for visualization:")
-                
+
                 mock_data = pd.DataFrame({
                     'DisplayName': ['GM_A', 'GM_B', 'GM_C'],
                     'ForumPosts': [150, 300, 50],

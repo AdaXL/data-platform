@@ -7,7 +7,7 @@ pytest
 docker-compose
 streamlit
 kaggle
-pyspark
+pyspark==3.5.1
 duckdb
 fastapi
 uvicorn
