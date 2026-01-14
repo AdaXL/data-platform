@@ -1,8 +1,10 @@
 import streamlit as st
-import pandas as pd
 import duckdb
 import os
 import plotly.express as px
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 # Initialize DuckDB connection
 @st.cache_resource
@@ -25,6 +27,7 @@ def load_data_into_duckdb(con, data_path='data/processed'):
         'user_followers': 'user_followers'
     }
     
+    loaded_tables = []
     for table_name, file_name in tables.items():
         file_path = os.path.join(data_path, file_name) # Parquet is a directory or file
         # Check if directory exists (Spark writes parquet as directory)
@@ -33,92 +36,137 @@ def load_data_into_duckdb(con, data_path='data/processed'):
                 # DuckDB can read parquet directories directly using glob syntax or just path
                 query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}/*.parquet')"
                 con.execute(query)
+                loaded_tables.append(table_name)
             except Exception as e:
                 st.error(f"Error loading {table_name}: {e}")
-    return True
+    return loaded_tables
+
+def get_schema_string(con, tables):
+    schema_str = ""
+    for table in tables:
+        schema_str += f"Table: {table}\nColumns:\n"
+        # Get columns for the table
+        columns = con.execute(f"DESCRIBE {table}").fetchall()
+        for col in columns:
+            schema_str += f"- {col[0]} ({col[1]})\n"
+        schema_str += "\n"
+    return schema_str
+
+def generate_sql(user_query, schema_str, api_key):
+    if not api_key:
+        return "Error: DeepSeek API Key is missing."
+    
+    # Configure for DeepSeek API
+    # DeepSeek is OpenAI-compatible, so we can use ChatOpenAI with the correct base_url
+    llm = ChatOpenAI(
+        model="deepseek-chat", 
+        temperature=0, 
+        api_key=api_key,
+        base_url="https://api.deepseek.com"
+    )
+    
+    template = """You are an expert SQL analyst using DuckDB.
+    Your task is to generate a valid DuckDB SQL query to answer the user's question based on the provided schema.
+    
+    Schema:
+    {schema}
+    
+    User Question: {question}
+    
+    Constraints:
+    1. Return ONLY the SQL query. Do not include markdown formatting (like ```sql).
+    2. Use Common Table Expressions (CTEs) for readability if the query is complex.
+    3. Ensure column names match the schema exactly.
+    4. If the question cannot be answered with the available schema, return "I cannot answer this question with the available data."
+    
+    SQL Query:
+    """
+    
+    prompt = ChatPromptTemplate.from_template(template)
+    chain = prompt | llm | StrOutputParser()
+    
+    try:
+        return chain.invoke({"schema": schema_str, "question": user_query})
+    except Exception as e:
+        return f"Error generating SQL: {e}"
 
 def main():
     st.set_page_config(page_title="KaggleMind", layout="wide")
     st.title("KaggleMind: Agentic SQL Analyst")
     
-    con = get_connection()
-    
     # Sidebar for setup
     with st.sidebar:
+        st.header("Configuration")
+        api_key = st.text_input("DeepSeek API Key", type="password")
+        if not api_key:
+            st.warning("Please enter your DeepSeek API Key to use the agent.")
+            
         st.header("System Status")
+        con = get_connection()
+        
         if st.button("Reload Data"):
             with st.spinner("Loading data into DuckDB..."):
-                success = load_data_into_duckdb(con)
-                if success:
-                    st.success("Data loaded successfully!")
+                loaded_tables = load_data_into_duckdb(con)
+                if loaded_tables:
+                    st.success(f"Loaded tables: {', '.join(loaded_tables)}")
+                    st.session_state['loaded_tables'] = loaded_tables
                 else:
                     st.error("Processed data not found. Run the pipeline first.")
         
-        st.header("Schema Info")
-        if st.checkbox("Show Tables"):
-            tables = con.execute("SHOW TABLES").fetchall()
-            st.write([t[0] for t in tables])
+        if 'loaded_tables' in st.session_state:
+            st.write("Active Tables:", st.session_state['loaded_tables'])
 
     # Main Chat Interface
     st.subheader("Ask a question about the Kaggle dataset")
-    user_query = st.text_input("Query", "Which Kaggle Grandmasters have the highest conversion rate from forum posts to competition gold medals?")
-    
+    user_query = st.text_input("Query", "How many competitions are there for each host segment? Can you show me the top 10?")
+    # example question: "Which Kaggle Grandmasters have the highest conversion rate from forum posts to competition gold medals?"
+
     if st.button("Analyze"):
-        st.info("Agent is thinking... (Mock implementation for now)")
-        
-        # Placeholder for Agent Logic
-        # In a real implementation, this would call the LangGraph agent
+        if not api_key:
+            st.error("Please provide a DeepSeek API Key in the sidebar.")
+            return
 
-        # Mock SQL generation for demonstration
-        st.markdown("### Agent Thought Trace")
-        st.markdown("""
-        1. **Planner**: Identified need for `Users`, `UserAchievements`, and `ForumMessages`.
-        2. **Coder**: Generating SQL to join these tables and calculate conversion rate.
-        """)
+        if 'loaded_tables' not in st.session_state or not st.session_state['loaded_tables']:
+            st.error("Please load data first using the sidebar button.")
+            return
 
-        mock_sql = """
-        -- This is a placeholder SQL query
-        SELECT 
-            u.DisplayName,
-            COUNT(DISTINCT fm.Id) as ForumPosts,
-            SUM(CASE WHEN ua.AchievementType = 'Competitions' AND ua.Tier = 4 THEN 1 ELSE 0 END) as GoldMedals
-        FROM users u
-        JOIN user_achievements ua ON u.Id = ua.UserId
-        LEFT JOIN forum_messages fm ON u.Id = fm.PostUserId
-        WHERE ua.Tier = 4 -- Grandmaster
-        GROUP BY u.DisplayName
-        HAVING ForumPosts > 0
-        ORDER BY GoldMedals DESC
-        LIMIT 10
-        """
+        st.info("Agent is thinking...")
         
-        st.code(mock_sql, language="sql")
+        # 1. Get Schema
+        schema_str = get_schema_string(con, st.session_state['loaded_tables'])
         
-        try:
-            # Execute mock SQL (might fail if tables aren't actually loaded with correct schema)
-            # For now, let's just show a sample dataframe if query fails or tables missing
+        # 2. Generate SQL
+        generated_sql = generate_sql(user_query, schema_str, api_key)
+        
+        # Clean up SQL if it contains markdown
+        generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
+        
+        st.markdown("### Generated SQL")
+        st.code(generated_sql, language="sql")
+        
+        if "Error" in generated_sql or "cannot answer" in generated_sql:
+            st.error(generated_sql)
+        else:
+            # 3. Execute SQL
             try:
-                df = con.execute(mock_sql).df()
+                df = con.execute(generated_sql).df()
+                st.markdown("### Results")
                 st.dataframe(df)
                 
                 if not df.empty:
-                    fig = px.bar(df, x='DisplayName', y='GoldMedals', title="Top Grandmasters by Gold Medals")
-                    st.plotly_chart(fig)
+                    # Simple auto-visualization logic
+                    numeric_cols = df.select_dtypes(include=['number']).columns
+                    if len(numeric_cols) > 0 and len(df.columns) > 1:
+                        # Pick the first non-numeric column as X (if exists) and first numeric as Y
+                        non_numeric_cols = df.select_dtypes(exclude=['number']).columns
+                        x_col = non_numeric_cols[0] if len(non_numeric_cols) > 0 else df.columns[0]
+                        y_col = numeric_cols[0]
+                        
+                        st.markdown("### Visualization")
+                        fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                        st.plotly_chart(fig)
             except Exception as e:
-                st.warning(f"Could not execute generated SQL against current data: {e}")
-                st.info("Displaying mock data for visualization:")
-
-                mock_data = pd.DataFrame({
-                    'DisplayName': ['GM_A', 'GM_B', 'GM_C'],
-                    'ForumPosts': [150, 300, 50],
-                    'GoldMedals': [10, 8, 5]
-                })
-                st.dataframe(mock_data)
-                fig = px.bar(mock_data, x='DisplayName', y='GoldMedals', title="Top Grandmasters by Gold Medals (Mock)")
-                st.plotly_chart(fig)
-
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
+                st.error(f"Error executing SQL: {e}")
 
 if __name__ == "__main__":
     main()
