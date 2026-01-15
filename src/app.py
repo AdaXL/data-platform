@@ -10,13 +10,27 @@ from langchain_core.output_parsers import StrOutputParser
 @st.cache_resource
 def get_connection():
     con = duckdb.connect(database=':memory:')
+    # Install and load httpfs for S3/Remote support
+    con.execute("INSTALL httpfs; LOAD httpfs;")
+    
+    # Check for S3 credentials in env vars
+    if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+        # Note: These settings work for both AWS S3 and Supabase Storage (S3 compatible)
+        con.execute(f"""
+            SET s3_region='{os.getenv("AWS_REGION", "us-east-1")}';
+            SET s3_access_key_id='{os.getenv("AWS_ACCESS_KEY_ID")}';
+            SET s3_secret_access_key='{os.getenv("AWS_SECRET_ACCESS_KEY")}';
+            SET s3_endpoint='{os.getenv("S3_ENDPOINT", "s3.amazonaws.com")}';
+        """)
     return con
 
 def load_data_into_duckdb(con, data_path='data/processed'):
     """
     Loads Parquet files from the processed directory into DuckDB tables.
     """
-    if not os.path.exists(data_path):
+    is_remote = data_path.startswith('s3://') or data_path.startswith('http')
+    
+    if not is_remote and not os.path.exists(data_path):
         return False
     
     tables = {
@@ -29,16 +43,24 @@ def load_data_into_duckdb(con, data_path='data/processed'):
     
     loaded_tables = []
     for table_name, file_name in tables.items():
-        file_path = os.path.join(data_path, file_name) # Parquet is a directory or file
-        # Check if directory exists (Spark writes parquet as directory)
-        if os.path.exists(file_path):
+        if is_remote:
+            # Simple string join for S3 to avoid OS-specific separators
+            file_path = f"{data_path.rstrip('/')}/{file_name}"
+            path_check = True # Cannot easily check existence on S3 without boto3
+        else:
+            file_path = os.path.join(data_path, file_name)
+            path_check = os.path.exists(file_path)
+
+        if path_check:
             try:
                 # DuckDB can read parquet directories directly using glob syntax or just path
                 query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}/*.parquet')"
                 con.execute(query)
                 loaded_tables.append(table_name)
             except Exception as e:
-                st.error(f"Error loading {table_name}: {e}")
+                # Only show error if we expected a local file, otherwise it might just be missing from S3
+                if not is_remote:
+                    st.error(f"Error loading {table_name}: {e}")
     return loaded_tables
 
 def get_schema_string(con, tables):
@@ -105,8 +127,10 @@ def main():
         con = get_connection()
         
         if st.button("Reload Data"):
+            # Allow overriding data path via env var for S3 usage
+            data_source = os.getenv("DATA_PATH", "data/processed")
             with st.spinner("Loading data into DuckDB..."):
-                loaded_tables = load_data_into_duckdb(con)
+                loaded_tables = load_data_into_duckdb(con, data_path=data_source)
                 if loaded_tables:
                     st.success(f"Loaded tables: {', '.join(loaded_tables)}")
                     st.session_state['loaded_tables'] = loaded_tables

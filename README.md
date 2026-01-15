@@ -7,7 +7,7 @@ KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. 
 - **Data Tier**:
     - **Ingestion**: Airflow orchestrates daily downloads of Meta Kaggle data.
     - **Transformation**: PySpark cleans and converts CSVs to Parquet.
-    - **Warehouse**: DuckDB for fast local analytical queries.
+    - **Warehouse**: DuckDB for fast analytical queries (supports local Parquet or remote S3/Supabase Storage).
 - **AI Tier**:
     - **Orchestration**: LangGraph (planned) for multi-agent workflows.
     - **LLM**: Integration with advanced LLMs for SQL generation and insight extraction.
@@ -57,6 +57,8 @@ KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. 
    # Process data
    python src/processing/data_cleaner.py
    ```
+
+   *Note: The full dataset is >40GB. To save space, modify `kaggle_downloader.py` to download only specific tables, or configure DuckDB to query data stored in S3/Supabase.*
 
 5. **Run the Application:**
    ```bash
