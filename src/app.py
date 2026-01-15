@@ -12,7 +12,7 @@ def get_connection():
     con = duckdb.connect(database=':memory:')
     # Install and load httpfs for S3/Remote support
     con.execute("INSTALL httpfs; LOAD httpfs;")
-    
+
     # Check for S3 credentials in env vars
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         # Note: These settings work for both AWS S3 and Supabase Storage (S3 compatible)
@@ -29,15 +29,15 @@ def load_data_into_duckdb(con, data_path='data/processed'):
     Loads Parquet files from the processed directory into DuckDB tables.
     """
     is_remote = data_path.startswith('s3://') or data_path.startswith('http')
-    
+
     if not is_remote and not os.path.exists(data_path):
         return False
     
     tables = {
-        # 'users': 'users',
+        'users': 'users',
         'competitions': 'competitions',
-        # 'user_achievements': 'user_achievements',
-        # 'forum_messages': 'forum_messages',
+        'user_achievements': 'user_achievements',
+        'forum_messages': 'forum_messages',
         'user_followers': 'user_followers'
     }
     
@@ -87,11 +87,43 @@ def generate_sql(user_query, schema_str, api_key):
         base_url="https://api.deepseek.com"
     )
     
+    # Few-shot examples to "fine-tune" the agent's understanding of the schema
+    examples = """
+    Examples:
+    
+    Question: "List the top 5 users with the most gold medals in Competitions."
+    SQL:
+    SELECT u.DisplayName, ua.TotalGold
+    FROM users u
+    JOIN user_achievements ua ON u.Id = ua.UserId
+    WHERE ua.AchievementType = 'Competitions'
+    ORDER BY ua.TotalGold DESC
+    LIMIT 5;
+
+    Question: "How many forum posts does each Grandmaster have on average?"
+    SQL:
+    WITH GMs AS (
+        SELECT UserId
+        FROM user_achievements
+        WHERE AchievementType = 'Competitions' AND Tier = 4
+    ),
+    PostCounts AS (
+        SELECT PostUserId, COUNT(*) as PostCount
+        FROM forum_messages
+        GROUP BY PostUserId
+    )
+    SELECT AVG(pc.PostCount) as AvgPosts
+    FROM GMs
+    JOIN PostCounts pc ON GMs.UserId = pc.PostUserId;
+    """
+    
     template = """You are an expert SQL analyst using DuckDB.
     Your task is to generate a valid DuckDB SQL query to answer the user's question based on the provided schema.
     
     Schema:
     {schema}
+    
+    {examples}
     
     User Question: {question}
     
@@ -108,7 +140,7 @@ def generate_sql(user_query, schema_str, api_key):
     chain = prompt | llm | StrOutputParser()
     
     try:
-        return chain.invoke({"schema": schema_str, "question": user_query})
+        return chain.invoke({"schema": schema_str, "examples": examples, "question": user_query})
     except Exception as e:
         return f"Error generating SQL: {e}"
 
@@ -142,8 +174,11 @@ def main():
 
     # Main Chat Interface
     st.subheader("Ask a question about the Kaggle dataset")
-    user_query = st.text_input("Query", "How many competitions are there for each host segment? Can you show me the top 10?")
-    # example question: "Which Kaggle Grandmasters have the highest conversion rate from forum posts to competition gold medals?"
+    # user_query = st.text_input("Query",
+    #                            "How many competitions are there for each host segment? Can you show me the top 10?")
+    user_query = st.text_input("Query",
+                               "Which Kaggle Grandmasters have the highest conversion rate from forum posts to competition gold medals?")
+
 
     if st.button("Analyze"):
         if not api_key:

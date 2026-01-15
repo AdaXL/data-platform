@@ -15,11 +15,11 @@ def clean_and_convert_to_parquet(input_path='data/raw', output_path='data/proces
 
     # Define schemas or transformations for specific tables
     tables = {
-        # 'Users.csv': 'users',
-        'Competitions.csv': 'competitions',
-        # 'UserAchievements.csv': 'user_achievements',
-        # 'ForumMessages.csv': 'forum_messages',
-        'UserFollowers.csv': 'user_followers'
+        'Users.csv': 'users',
+        # 'Competitions.csv': 'competitions',
+        'UserAchievements.csv': 'user_achievements',
+        'ForumMessages.csv': 'forum_messages',
+        # 'UserFollowers.csv': 'user_followers'
     }
 
     for file_name, table_name in tables.items():
