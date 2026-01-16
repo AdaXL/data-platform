@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import sys
 import os
@@ -24,20 +24,21 @@ with DAG(
     'kaggle_meta_pipeline',
     default_args=default_args,
     description='Pipeline to download and process Kaggle Meta dataset',
-    schedule_interval=timedelta(days=1),
-    catchup=False,
+    start_date=datetime(2026, 1, 1), # Start date in the past
+    schedule=timedelta(days=1),
+    catchup=False, # Prevents backfills
 ) as dag:
 
     download_task = PythonOperator(
         task_id='download_kaggle_data',
         python_callable=download_meta_kaggle_dataset,
-        op_kwargs={'download_path': '/app/data/raw'} # Adjust path for Airflow environment
+        op_kwargs={'download_path': '/app/data/test/raw'} # Adjust path for Airflow environment
     )
 
     process_task = PythonOperator(
         task_id='process_kaggle_data',
         python_callable=clean_and_convert_to_parquet,
-        op_kwargs={'input_path': '/app/data/raw', 'output_path': '/app/data/processed'}
+        op_kwargs={'input_path': '/app/data/test/raw', 'output_path': '/app/data/test/processed'}
     )
 
     download_task >> process_task

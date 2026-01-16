@@ -15,11 +15,11 @@ def download_meta_kaggle_dataset(download_path='data/raw'):
     
     # List of specific files to download
     files_to_download = [
-        'Users.csv',
+        # 'Users.csv',
         # 'Competitions.csv',
-        'UserAchievements.csv',
-        'ForumMessages.csv',
-        # 'UserFollowers.csv'
+        # 'UserAchievements.csv',
+        # 'ForumMessages.csv',
+        'UserFollowers.csv'
     ]
     
     # Kaggle API doesn't support downloading specific files easily via dataset_download_files with unzip=True for a subset

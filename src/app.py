@@ -74,7 +74,7 @@ def get_schema_string(con, tables):
         schema_str += "\n"
     return schema_str
 
-def generate_sql(user_query, schema_str, api_key):
+def generate_sql(user_query, schema_str, api_key, error_message=None, previous_sql=None):
     if not api_key:
         return "Error: DeepSeek API Key is missing."
     
@@ -117,32 +117,66 @@ def generate_sql(user_query, schema_str, api_key):
     JOIN PostCounts pc ON GMs.UserId = pc.PostUserId;
     """
     
-    template = """You are an expert SQL analyst using DuckDB.
-    Your task is to generate a valid DuckDB SQL query to answer the user's question based on the provided schema.
-    
-    Schema:
-    {schema}
-    
-    {examples}
-    
-    User Question: {question}
-    
-    Constraints:
-    1. Return ONLY the SQL query. Do not include markdown formatting (like ```sql).
-    2. Use Common Table Expressions (CTEs) for readability if the query is complex.
-    3. Ensure column names match the schema exactly.
-    4. If the question cannot be answered with the available schema, return "I cannot answer this question with the available data."
-    
-    SQL Query:
-    """
-    
-    prompt = ChatPromptTemplate.from_template(template)
-    chain = prompt | llm | StrOutputParser()
-    
-    try:
-        return chain.invoke({"schema": schema_str, "examples": examples, "question": user_query})
-    except Exception as e:
-        return f"Error generating SQL: {e}"
+    if error_message:
+        template = """You are an expert SQL analyst using DuckDB.
+        The previous SQL query you generated failed with an error.
+        Your task is to FIX the SQL query based on the error message and the schema.
+        
+        Schema:
+        {schema}
+        
+        User Question: {question}
+        
+        Previous SQL:
+        {previous_sql}
+        
+        Error Message:
+        {error_message}
+        
+        Constraints:
+        1. Return ONLY the corrected SQL query. Do not include markdown formatting (like ```sql).
+        2. Ensure column names match the schema exactly.
+        
+        Corrected SQL Query:
+        """
+        prompt = ChatPromptTemplate.from_template(template)
+        chain = prompt | llm | StrOutputParser()
+        try:
+            return chain.invoke({
+                "schema": schema_str, 
+                "question": user_query,
+                "previous_sql": previous_sql,
+                "error_message": error_message
+            })
+        except Exception as e:
+            return f"Error correcting SQL: {e}"
+    else:
+        template = """You are an expert SQL analyst using DuckDB.
+        Your task is to generate a valid DuckDB SQL query to answer the user's question based on the provided schema.
+        
+        Schema:
+        {schema}
+        
+        {examples}
+        
+        User Question: {question}
+        
+        Constraints:
+        1. Return ONLY the SQL query. Do not include markdown formatting (like ```sql).
+        2. Use Common Table Expressions (CTEs) for readability if the query is complex.
+        3. Ensure column names match the schema exactly.
+        4. If the question cannot be answered with the available schema, return "I cannot answer this question with the available data."
+        
+        SQL Query:
+        """
+        
+        prompt = ChatPromptTemplate.from_template(template)
+        chain = prompt | llm | StrOutputParser()
+        
+        try:
+            return chain.invoke({"schema": schema_str, "examples": examples, "question": user_query})
+        except Exception as e:
+            return f"Error generating SQL: {e}"
 
 def main():
     st.set_page_config(page_title="KaggleMind", layout="wide")
@@ -194,38 +228,51 @@ def main():
         # 1. Get Schema
         schema_str = get_schema_string(con, st.session_state['loaded_tables'])
         
-        # 2. Generate SQL
+        # 2. Generate SQL (Initial Attempt)
         generated_sql = generate_sql(user_query, schema_str, api_key)
-        
+
         # Clean up SQL if it contains markdown
         generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
         
-        st.markdown("### Generated SQL")
+        st.markdown("### Generated SQL (Attempt 1)")
         st.code(generated_sql, language="sql")
         
         if "Error" in generated_sql or "cannot answer" in generated_sql:
             st.error(generated_sql)
         else:
-            # 3. Execute SQL
-            try:
-                df = con.execute(generated_sql).df()
-                st.markdown("### Results")
-                st.dataframe(df)
-                
-                if not df.empty:
-                    # Simple auto-visualization logic
-                    numeric_cols = df.select_dtypes(include=['number']).columns
-                    if len(numeric_cols) > 0 and len(df.columns) > 1:
-                        # Pick the first non-numeric column as X (if exists) and first numeric as Y
-                        non_numeric_cols = df.select_dtypes(exclude=['number']).columns
-                        x_col = non_numeric_cols[0] if len(non_numeric_cols) > 0 else df.columns[0]
-                        y_col = numeric_cols[0]
-                        
-                        st.markdown("### Visualization")
-                        fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
-                        st.plotly_chart(fig)
-            except Exception as e:
-                st.error(f"Error executing SQL: {e}")
+            # 3. Execute SQL with Self-Correction Loop
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    df = con.execute(generated_sql).df()
+                    st.markdown("### Results")
+                    st.dataframe(df)
+                    
+                    if not df.empty:
+                        # Simple auto-visualization logic
+                        numeric_cols = df.select_dtypes(include=['number']).columns
+                        if len(numeric_cols) > 0 and len(df.columns) > 1:
+                            non_numeric_cols = df.select_dtypes(exclude=['number']).columns
+                            x_col = non_numeric_cols[0] if len(non_numeric_cols) > 0 else df.columns[0]
+                            y_col = numeric_cols[0]
+                            
+                            st.markdown("### Visualization")
+                            fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                            st.plotly_chart(fig)
+                    break # Success, exit loop
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    st.warning(f"Attempt {attempt + 1} failed: {error_msg}")
+                    
+                    if attempt < max_retries:
+                        st.info("Agent is correcting the SQL...")
+                        generated_sql = generate_sql(user_query, schema_str, api_key, error_message=error_msg, previous_sql=generated_sql)
+                        generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
+                        st.markdown(f"### Generated SQL (Attempt {attempt + 2})")
+                        st.code(generated_sql, language="sql")
+                    else:
+                        st.error(f"Failed after {max_retries + 1} attempts. Last error: {error_msg}")
 
 if __name__ == "__main__":
     main()
