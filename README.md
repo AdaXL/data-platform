@@ -1,31 +1,57 @@
 # KaggleMind: An Autonomous Agentic SQL Analyst
 
 ## Overview
-KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. It allows users to ask natural language questions, which are then converted into SQL queries, executed against a DuckDB backend, and visualized using Streamlit.
+KaggleMind is an advanced AI-powered system designed to analyze the Meta Kaggle dataset. It leverages a **multi-agent architecture** to autonomously plan, generate, execute, and correct SQL queries, allowing users to ask complex natural language questions and receive accurate data visualizations.
 
 ## Architecture
-- **Data Tier**:
-    - **Ingestion**: Airflow orchestrates daily downloads of Meta Kaggle data.
-    - **Transformation**: PySpark cleans and converts CSVs to Parquet.
-    - **Warehouse**: DuckDB for fast analytical queries (supports local Parquet or remote S3/Supabase Storage).
-- **AI Tier**:
-    - **Orchestration**: LangGraph (planned) for multi-agent workflows.
-    - **LLM**: Integration with advanced LLMs for SQL generation and insight extraction.
-- **Frontend**: Streamlit with Plotly for interactive visualizations.
+
+### Data Tier
+- **Ingestion**: 
+  - `src/ingestion/kaggle_downloader.py`: Downloads specific Meta Kaggle tables (`Users`, `Competitions`, `UserAchievements`, etc.) via the Kaggle API.
+  - **Orchestration**: Airflow DAG (`orchestration/airflow/dags/kaggle_pipeline.py`) manages the daily sync pipeline.
+- **Transformation**: 
+  - `src/processing/data_cleaner.py`: Uses **PySpark** to clean raw CSVs and convert them into optimized **Parquet** files.
+- **Warehouse**: 
+  - **DuckDB**: Acts as a serverless OLAP engine to query Parquet files directly (supports local disk or remote S3/Supabase storage).
+
+### AI Tier (Agentic System)
+- **Orchestration**: **LangGraph** (`src/agent/graph.py`) manages the stateful workflow of the agent.
+- **RAG (Retrieval-Augmented Generation)**: 
+  - `src/agent/rag_retriever.py`: Uses **ChromaDB** to store semantic descriptions of the schema. It retrieves only the relevant table schemas for a given user query, reducing context window usage and improving accuracy.
+- **Self-Correction Loop**: The agent executes the generated SQL against DuckDB. If an error occurs (e.g., syntax error, missing column), the error is fed back into the LLM to autonomously fix the query.
+- **LLM**: Powered by **DeepSeek-V3** (via OpenAI-compatible API) for high-performance code generation.
+
+### Frontend
+- **Streamlit**: Provides an interactive chat interface (`src/app.py`).
+- **Plotly**: Automatically visualizes query results based on data types.
 
 ## Project Structure
-- **src**:
-  - **ingestion**: `kaggle_downloader.py` for fetching data.
-  - **processing**: `data_cleaner.py` for Spark-based transformation.
-  - **app.py**: Streamlit application.
-- **orchestration**: Airflow DAGs.
+```
+data-platform/
+├── src/
+│   ├── agent/              # AI Agent Logic
+│   │   ├── graph.py        # LangGraph workflow definition
+│   │   └── rag_retriever.py # ChromaDB schema retrieval
+│   ├── ingestion/          # Data Ingestion
+│   │   └── kaggle_downloader.py
+│   ├── processing/         # Data Transformation
+│   │   └── data_cleaner.py # PySpark ETL
+│   └── app.py              # Streamlit Frontend
+├── orchestration/
+│   └── airflow/dags/       # Airflow DAGs
+│       └── kaggle_pipeline.py
+├── data/                   # Local data storage (raw/processed)
+├── requirements.txt
+└── docker-compose.yml
+```
 
 ## Getting Started
 
 ### Prerequisites
-- Python 3.8+
-- Java (for PySpark)
+- Python 3.9+
+- Java 17 (for PySpark)
 - Kaggle API credentials
+- DeepSeek API Key
 
 ### Setup
 
@@ -51,10 +77,10 @@ KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. 
    
    **Manual:**
    ```bash
-   # Download data
+   # Download specific tables
    python src/ingestion/kaggle_downloader.py
    
-   # Process data
+   # Process CSV to Parquet
    python src/processing/data_cleaner.py
    ```
 
@@ -64,9 +90,10 @@ KaggleMind is an AI-powered system designed to analyze the Meta Kaggle dataset. 
    ```bash
    streamlit run src/app.py
    ```
+   Enter your DeepSeek API Key in the sidebar to start analyzing.
 
 ### Docker
-Run the full stack:
+Run the full stack including Airflow and Streamlit:
 ```bash
 docker-compose up --build
 ```
@@ -77,6 +104,12 @@ docker-compose up --build
 - [ ] LangGraph Multi-Agent System
 - [ ] Semantic Layer & Vector DB
 - [ ] FastAPI Backend
+
+## Features
+- **Natural Language to SQL**: Ask questions like "Which Grandmasters have the highest conversion rate from forum posts to gold medals?"
+- **Schema-Aware RAG**: The agent understands the specific schema of the Meta Kaggle dataset.
+- **Auto-Correction**: If the agent writes bad SQL, it fixes it automatically.
+- **Visualizations**: Dynamic charts generated from query results.
 
 ## License
 MIT
