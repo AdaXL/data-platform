@@ -20,7 +20,7 @@ app:
 
 # Testing
 test:
-	pytest tests/unit
+	python -m unittest discover tests/unit
 
 # Docker commands
 docker-up:

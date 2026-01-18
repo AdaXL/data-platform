@@ -3,7 +3,6 @@ pandas
 boto3
 apache-airflow
 dbt
-pytest
 docker-compose
 streamlit
 kaggle
