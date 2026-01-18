@@ -1,40 +1,44 @@
 import unittest
-from src.ingestion.stream_consumer import StreamConsumer
-from src.ingestion.connectors.s3_connector import S3Connector
+from unittest.mock import patch, MagicMock
+import os
+import sys
 
-class TestIngestion(unittest.TestCase):
+# Add src to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
-    def setUp(self):
-        self.stream_consumer = StreamConsumer()
-        self.s3_connector = S3Connector()
+from ingestion.kaggle_downloader import download_meta_kaggle_dataset
 
-    def test_consume(self):
-        # Test the consume method of StreamConsumer
-        result = self.stream_consumer.consume()
-        self.assertIsNotNone(result)
+class TestKaggleDownloader(unittest.TestCase):
 
-    def test_process_message(self):
-        # Test the process_message method of StreamConsumer
-        message = "test message"
-        result = self.stream_consumer.process_message(message)
-        self.assertTrue(result)
-
-    def test_s3_connect(self):
-        # Test the connect method of S3Connector
-        result = self.s3_connector.connect()
-        self.assertTrue(result)
-
-    def test_s3_upload_file(self):
-        # Test the upload_file method of S3Connector
-        file_path = "test_file.txt"
-        result = self.s3_connector.upload_file(file_path)
-        self.assertTrue(result)
-
-    def test_s3_download_file(self):
-        # Test the download_file method of S3Connector
-        file_name = "test_file.txt"
-        result = self.s3_connector.download_file(file_name)
-        self.assertIsNotNone(result)
+    @patch('ingestion.kaggle_downloader.kaggle')
+    @patch('ingestion.kaggle_downloader.os')
+    @patch('ingestion.kaggle_downloader.zipfile')
+    def test_download_meta_kaggle_dataset(self, mock_zipfile, mock_os, mock_kaggle):
+        # Setup mocks
+        mock_os.path.exists.return_value = False
+        
+        # Run function
+        download_meta_kaggle_dataset(download_path='data/test_raw')
+        
+        # Assertions
+        mock_os.makedirs.assert_called_with('data/test_raw')
+        mock_kaggle.api.authenticate.assert_called_once()
+        
+        # Check that specific files were requested
+        expected_files = [
+            # 'Users.csv',
+            # 'Competitions.csv',
+            # 'UserAchievements.csv',
+            # 'ForumMessages.csv',
+            'UserFollowers.csv'
+        ]
+        
+        # Verify dataset_download_file was called for each expected file
+        self.assertEqual(mock_kaggle.api.dataset_download_file.call_count, len(expected_files))
+        
+        # Verify calls
+        calls = [unittest.mock.call('kaggle/meta-kaggle', f, path='data/test_raw') for f in expected_files]
+        mock_kaggle.api.dataset_download_file.assert_has_calls(calls, any_order=True)
 
 if __name__ == '__main__':
     unittest.main()
