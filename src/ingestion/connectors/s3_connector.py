@@ -7,11 +7,11 @@ class S3Connector:
 
     def connect(self):
         import boto3
+
         self.session = boto3.Session(
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key
+            aws_access_key_id=self.access_key, aws_secret_access_key=self.secret_key
         )
-        return self.session.resource('s3')
+        return self.session.resource("s3")
 
     def upload_file(self, file_name, object_name=None):
         s3 = self.connect()

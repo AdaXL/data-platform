@@ -1,19 +1,19 @@
 -- This file contains SQL for staging models in dbt.
 
 WITH source_data AS (
-    SELECT 
+    SELECT
         id,
         name,
         created_at,
         updated_at
-    FROM 
+    FROM
         raw_data_table
 )
 
-SELECT 
+SELECT
     id,
     name,
     created_at,
     updated_at
-FROM 
+FROM
     source_data;

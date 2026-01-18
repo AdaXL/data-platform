@@ -1,13 +1,13 @@
-from typing import TypedDict, Annotated, List, Union
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-import duckdb
+from typing import List, TypedDict, Union
+
 import pandas as pd
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
 
 from agent.rag_retriever import SchemaRetriever
+
 
 # Define the Agent State
 class AgentState(TypedDict):
@@ -19,15 +19,19 @@ class AgentState(TypedDict):
     error: str
     attempts: int
 
+
 class SQLAgent:
-    def __init__(self, connection, api_key, base_url="https://api.deepseek.com", model="deepseek-chat"):
+    def __init__(
+        self,
+        connection,
+        api_key,
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+    ):
         self.con = connection
         self.retriever = SchemaRetriever()
         self.llm = ChatOpenAI(
-            model=model,
-            temperature=0,
-            api_key=api_key,
-            base_url=base_url
+            model=model, temperature=0, api_key=api_key, base_url=base_url
         )
         self.workflow = self._build_graph()
 
@@ -44,24 +48,19 @@ class SQLAgent:
         workflow.set_entry_point("retrieve")
         workflow.add_edge("retrieve", "generate")
         workflow.add_edge("generate", "execute")
-        
+
         # Conditional Edge based on execution result
         workflow.add_conditional_edges(
-            "execute",
-            self.check_execution,
-            {
-                "success": END,
-                "error": "correct"
-            }
+            "execute", self.check_execution, {"success": END, "error": "correct"}
         )
-        
-        workflow.add_edge("correct", "execute") # Loop back to execution
+
+        workflow.add_edge("correct", "execute")  # Loop back to execution
 
         return workflow.compile()
 
     def retrieve_node(self, state: AgentState):
         tables = self.retriever.retrieve_relevant_tables(state["question"])
-        
+
         # Build schema string only for relevant tables
         schema_str = ""
         for table in tables:
@@ -71,16 +70,17 @@ class SQLAgent:
                 for col in columns:
                     schema_str += f"- {col[0]} ({col[1]})\n"
                 schema_str += "\n"
-            except:
-                pass # Table might not be loaded
-        
+            except Exception:
+                # Table might not be loaded
+                pass
+
         return {"relevant_tables": tables, "schema_context": schema_str, "attempts": 0}
 
     def generate_node(self, state: AgentState):
         # Few-shot examples to "fine-tune" the agent's understanding of the schema
         examples = """
         Examples:
-        
+
         Question: "List the top 5 users with the most gold medals in Competitions."
         SQL:
         SELECT u.DisplayName, ua.TotalGold
@@ -109,30 +109,32 @@ class SQLAgent:
 
         template = """You are an expert SQL analyst using DuckDB.
         Your task is to generate a valid DuckDB SQL query to answer the user's question based on the provided schema.
-        
+
         Schema:
         {schema}
-        
+
         {examples}
-        
+
         User Question: {question}
-        
+
         Constraints:
         1. Return ONLY the SQL query. Do not include markdown formatting (like ```sql).
         2. Use Common Table Expressions (CTEs) for readability if the query is complex.
         3. Ensure column names match the schema exactly.
         4. If the question cannot be answered with the available schema, return "I cannot answer this question with the available data."
-        
+
         SQL Query:
         """
         prompt = ChatPromptTemplate.from_template(template)
         chain = prompt | self.llm | StrOutputParser()
-        
-        sql = chain.invoke({
-            "schema": state["schema_context"], 
-            "question": state["question"],
-            "examples": examples
-        })
+
+        sql = chain.invoke(
+            {
+                "schema": state["schema_context"],
+                "question": state["question"],
+                "examples": examples,
+            }
+        )
         clean_sql = sql.replace("```sql", "").replace("```", "").strip()
         return {"sql_query": clean_sql}
 
@@ -146,34 +148,36 @@ class SQLAgent:
     def correct_node(self, state: AgentState):
         state["attempts"] += 1
         if state["attempts"] > 3:
-            return {"sql_query": "SELECT 'Max retries exceeded' as error"} # Break loop
-            
+            return {"sql_query": "SELECT 'Max retries exceeded' as error"}  # Break loop
+
         template = """The previous SQL query failed. Fix it based on the error.
-        
+
         Schema:
         {schema}
-        
+
         Previous SQL:
         {sql}
-        
+
         Error Message:
         {error}
-        
+
         Constraints:
         1. Return ONLY the corrected SQL query. Do not include markdown formatting (like ```sql).
         2. Ensure column names match the schema exactly.
         3. Use Common Table Expressions (CTEs) for readability.
-        
+
         Corrected SQL Query:
         """
         prompt = ChatPromptTemplate.from_template(template)
         chain = prompt | self.llm | StrOutputParser()
-        
-        fixed_sql = chain.invoke({
-            "schema": state["schema_context"], 
-            "sql": state["sql_query"],
-            "error": state["error"]
-        })
+
+        fixed_sql = chain.invoke(
+            {
+                "schema": state["schema_context"],
+                "sql": state["sql_query"],
+                "error": state["error"],
+            }
+        )
         clean_sql = fixed_sql.replace("```sql", "").replace("```", "").strip()
         return {"sql_query": clean_sql}
 
@@ -181,7 +185,7 @@ class SQLAgent:
         if state["error"] is None:
             return "success"
         if state["attempts"] > 3:
-            return "success" # Force exit to avoid infinite loop
+            return "success"  # Force exit to avoid infinite loop
         return "error"
 
     def run(self, question: str):
