@@ -1,8 +1,8 @@
 numpy
 pandas
 boto3
-apache-airflow
-dbt
+dagster
+dagster-webserver
 docker-compose
 streamlit
 kaggle

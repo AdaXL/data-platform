@@ -8,7 +8,7 @@ KaggleMind is an advanced AI-powered system designed to analyze the Meta Kaggle 
 ### Data Tier
 - **Ingestion**:
   - `src/ingestion/kaggle_downloader.py`: Downloads specific Meta Kaggle tables (`Users`, `Competitions`, `UserAchievements`, etc.) via the Kaggle API.
-  - **Orchestration**: Airflow DAG (`orchestration/airflow/dags/kaggle_pipeline.py`) manages the daily sync pipeline.
+  - **Orchestration**: Dagster (`orchestration/dagster/repository.py`) manages the daily sync pipeline.
 - **Transformation**:
   - `src/processing/data_cleaner.py`: Uses **PySpark** to clean raw CSVs and convert them into optimized **Parquet** files.
 - **Warehouse**:
@@ -38,8 +38,8 @@ data-platform/
 │   │   └── data_cleaner.py # PySpark ETL
 │   └── app.py              # Streamlit Frontend
 ├── orchestration/
-│   └── airflow/dags/       # Airflow DAGs
-│       └── kaggle_pipeline.py
+│   └── dagster/            # Dagster Repository
+│       └── repository.py
 ├── data/                   # Local data storage (raw/processed)
 ├── requirements.txt
 ├── docker-compose.yml
@@ -97,7 +97,7 @@ data-platform/
    Enter your DeepSeek API Key in the sidebar to start analyzing.
 
 ### Docker
-Run the full stack including Airflow and Streamlit:
+Run the full stack including Dagster and Streamlit:
 ```bash
 make docker-up
 ```

@@ -22,6 +22,24 @@ services:
     depends_on:
       - db
 
+  dagster:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit # Reusing the same image for simplicity as it has all deps
+    command: dagster dev -h 0.0.0.0 -p 3000 -f orchestration/dagster/repository.py
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./orchestration:/app/orchestration
+      - ./data:/app/data
+    environment:
+      - KAGGLE_USERNAME=${KAGGLE_USERNAME}
+      - KAGGLE_KEY=${KAGGLE_KEY}
+      - DAGSTER_HOME=/app/dagster_home
+    depends_on:
+      - db
+
   db:
     image: postgres:latest
     restart: always
