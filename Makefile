@@ -1,6 +1,6 @@
 # Makefile for Data Platform Project
 
-.PHONY: all clean install run test download process app docker-up docker-down
+.PHONY: all clean install run test download process app dagster docker-up docker-down
 
 all: install
 
@@ -17,6 +17,10 @@ process:
 # Run the Streamlit App
 app:
 	streamlit run src/app.py
+
+# Run Dagster UI
+dagster:
+	dagster dev -f orchestration/dagster/repository.py -p 3000
 
 # Testing
 test:

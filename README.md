@@ -89,6 +89,12 @@ data-platform/
    # Process CSV to Parquet
    make process
    ```
+   or
+   **Orchestration with Dagster:**
+   ```bash
+   make dagster
+   ```
+   Access the UI at `http://localhost:3000`.
 
 6. **Run the Application:**
    ```bash
