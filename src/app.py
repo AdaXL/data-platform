@@ -6,6 +6,7 @@ import plotly.express as px
 import streamlit as st
 
 from agent.graph import SQLAgent
+from agent.visualization import VisualizationAgent
 
 
 # Initialize DuckDB connection
@@ -104,11 +105,12 @@ def main():
 
         st.info("Agent is thinking (LangGraph)...")
 
-        # Initialize Agent
-        agent = SQLAgent(con, api_key)
+        # Initialize Agents
+        sql_agent = SQLAgent(con, api_key)
+        viz_agent = VisualizationAgent(api_key)
 
-        # Run Agent
-        result_state = agent.run(user_query)
+        # Run SQL Agent
+        result_state = sql_agent.run(user_query)
 
         # Display Results
         st.markdown("### Generated SQL")
@@ -122,19 +124,32 @@ def main():
             st.dataframe(df)
 
             if not df.empty:
-                numeric_cols = df.select_dtypes(include=["number"]).columns
-                if len(numeric_cols) > 0 and len(df.columns) > 1:
-                    non_numeric_cols = df.select_dtypes(exclude=["number"]).columns
-                    x_col = (
-                        non_numeric_cols[0]
-                        if len(non_numeric_cols) > 0
-                        else df.columns[0]
-                    )
-                    y_col = numeric_cols[0]
+                st.info("Generating visualization...")
 
+                # Run Visualization Agent
+                viz_config = viz_agent.suggest_visualization(df, user_query)
+
+                if viz_config:
                     st.markdown("### Visualization")
-                    fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
-                    st.plotly_chart(fig)
+                    st.caption(f"Reasoning: {viz_config.get('reasoning', 'N/A')}")
+
+                    try:
+                        chart_type = viz_config.get("chart_type")
+                        params = viz_config.get("params", {})
+
+                        if chart_type and hasattr(px, chart_type):
+                            fig = getattr(px, chart_type)(df, **params)
+                            st.plotly_chart(fig)
+                        else:
+                            st.warning(
+                                f"Suggested chart type '{chart_type}' is not supported."
+                            )
+                    except Exception as e:
+                        st.error(f"Error creating chart: {e}")
+                else:
+                    st.warning(
+                        "Could not determine a suitable visualization for this data."
+                    )
 
 
 if __name__ == "__main__":
