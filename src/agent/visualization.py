@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import plotly.express as px
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
@@ -72,10 +73,71 @@ class VisualizationAgent:
 
         try:
             response = chain.invoke({"query": query, "columns_info": columns_str})
-
-            # Clean up response if it contains markdown
             clean_json = response.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean_json)
+            config = json.loads(clean_json)
+            return config
         except Exception as e:
             print(f"Error generating visualization config: {e}")
+            return self._fallback_visualization(df)
+
+    def create_chart(self, df: pd.DataFrame, config: dict):
+        """
+        Attempts to create a chart based on config.
+        If it fails, it tries to self-correct by falling back to a simpler chart.
+        """
+        try:
+            chart_type = config.get("chart_type")
+            params = config.get("params", {})
+
+            if chart_type and hasattr(px, chart_type):
+                return getattr(px, chart_type)(df, **params)
+            else:
+                raise ValueError(f"Unsupported chart type: {chart_type}")
+
+        except Exception as e:
+            print(f"Visualization error: {e}. Attempting self-correction...")
+            return self._create_fallback_chart(df)
+
+    def _fallback_visualization(self, df: pd.DataFrame):
+        """
+        Generates a safe default configuration if the LLM fails.
+        """
+        numeric_cols = df.select_dtypes(include=["number"]).columns
+        non_numeric_cols = df.select_dtypes(exclude=["number"]).columns
+
+        if len(numeric_cols) > 0 and len(non_numeric_cols) > 0:
+            return {
+                "chart_type": "bar",
+                "params": {
+                    "x": non_numeric_cols[0],
+                    "y": numeric_cols[0],
+                    "title": f"{numeric_cols[0]} by {non_numeric_cols[0]} (Fallback)",
+                },
+                "reasoning": "Fallback: Bar chart of first numeric vs first categorical column.",
+            }
+        elif len(numeric_cols) >= 2:
+            return {
+                "chart_type": "scatter",
+                "params": {
+                    "x": numeric_cols[0],
+                    "y": numeric_cols[1],
+                    "title": f"{numeric_cols[1]} vs {numeric_cols[0]} (Fallback)",
+                },
+                "reasoning": "Fallback: Scatter plot of two numeric columns.",
+            }
+        else:
             return None
+
+    def _create_fallback_chart(self, df: pd.DataFrame):
+        """
+        Directly creates a Plotly figure using safe defaults.
+        """
+        config = self._fallback_visualization(df)
+        if config:
+            try:
+                chart_type = config["chart_type"]
+                params = config["params"]
+                return getattr(px, chart_type)(df, **params)
+            except:
+                return None
+        return None

@@ -2,7 +2,6 @@ import os
 
 import duckdb
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from agent.graph import SQLAgent
@@ -14,6 +13,7 @@ from agent.visualization import VisualizationAgent
 def get_connection():
     con = duckdb.connect(database=":memory:")
     con.execute("INSTALL httpfs; LOAD httpfs;")
+    # Configure S3/Remote access if env vars are present
     if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
         con.execute(
             f"""
@@ -26,69 +26,126 @@ def get_connection():
     return con
 
 
-def load_data_into_duckdb(con, data_path="data/processed"):
-    is_remote = data_path.startswith("s3://") or data_path.startswith("http")
-    if not is_remote and not os.path.exists(data_path):
-        return False
+def load_file_into_duckdb(con, file_path, table_name=None):
+    """
+    Loads a single file (CSV, Parquet, JSON) into DuckDB.
+    """
+    if table_name is None:
+        # Infer table name from filename
+        base_name = os.path.basename(file_path)
+        table_name = (
+            os.path.splitext(base_name)[0].replace("-", "_").replace(" ", "_").lower()
+        )
 
-    tables = {
-        "users": "users",
-        "competitions": "competitions",
-        "user_achievements": "user_achievements",
-        "forum_messages": "forum_messages",
-        "user_followers": "user_followers",
-    }
-
-    loaded_tables = []
-    for table_name, file_name in tables.items():
-        if is_remote:
-            file_path = f"{data_path.rstrip('/')}/{file_name}"
-            path_check = True
+    try:
+        # Determine file type and construct query
+        if file_path.endswith(".parquet"):
+            query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}')"
+        elif file_path.endswith(".csv"):
+            query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto('{file_path}')"
+        elif file_path.endswith(".json"):
+            query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_json_auto('{file_path}')"
         else:
-            file_path = os.path.join(data_path, file_name)
-            path_check = os.path.exists(file_path)
+            return None, "Unsupported file format"
 
-        if path_check:
-            try:
-                query = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}/*.parquet')"
-                con.execute(query)
-                loaded_tables.append(table_name)
-            except Exception as e:
-                if not is_remote:
-                    st.error(f"Error loading {table_name}: {e}")
-    return loaded_tables
+        con.execute(query)
+        return table_name, None
+    except Exception as e:
+        return None, str(e)
 
 
 def main():
-    st.set_page_config(page_title="KaggleMind", layout="wide")
-    st.title("KaggleMind: Agentic SQL Analyst")
+    st.set_page_config(page_title="DataMind: Universal Data Analyst", layout="wide")
+    st.title("DataMind: Universal Data Analyst")
 
+    # Sidebar for setup
     with st.sidebar:
         st.header("Configuration")
         api_key = st.text_input("DeepSeek API Key", type="password")
         if not api_key:
             st.warning("Please enter your DeepSeek API Key.")
 
-        st.header("System Status")
+        st.header("Data Sources")
         con = get_connection()
 
-        if st.button("Reload Data"):
-            data_source = os.getenv("DATA_PATH", "data/processed")
-            with st.spinner("Loading data into DuckDB..."):
-                loaded_tables = load_data_into_duckdb(con, data_path=data_source)
-                if loaded_tables:
-                    st.success(f"Loaded tables: {', '.join(loaded_tables)}")
-                    st.session_state["loaded_tables"] = loaded_tables
+        # 1. File Upload
+        uploaded_files = st.file_uploader(
+            "Upload Data (CSV, Parquet, JSON)", accept_multiple_files=True
+        )
+
+        # 2. External Database Connection (Simplified)
+        st.subheader("External Database")
+        db_type = st.selectbox("Type", ["None", "Postgres", "MySQL", "S3"])
+
+        if db_type == "S3":
+            s3_path = st.text_input("S3 Path (s3://bucket/path/*.parquet)")
+            if st.button("Connect S3"):
+                if s3_path:
+                    table_name = "s3_data"
+                    try:
+                        con.execute(
+                            f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{s3_path}')"
+                        )
+                        st.success(f"Loaded S3 data into '{table_name}'")
+                        if "loaded_tables" not in st.session_state:
+                            st.session_state["loaded_tables"] = []
+                        st.session_state["loaded_tables"].append(table_name)
+                    except Exception as e:
+                        st.error(f"Error connecting to S3: {e}")
+
+        # Process Uploaded Files
+        if uploaded_files:
+            if "loaded_tables" not in st.session_state:
+                st.session_state["loaded_tables"] = []
+
+            for uploaded_file in uploaded_files:
+                # Save to temp file to allow DuckDB to read it
+                # In a real app, handle temp files more securely/robustly
+                temp_path = f"temp_{uploaded_file.name}"
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+
+                table_name, error = load_file_into_duckdb(con, temp_path)
+                if table_name:
+                    if table_name not in st.session_state["loaded_tables"]:
+                        st.session_state["loaded_tables"].append(table_name)
+                    st.success(f"Loaded '{uploaded_file.name}' as table '{table_name}'")
                 else:
-                    st.error("Processed data not found.")
+                    st.error(f"Failed to load '{uploaded_file.name}': {error}")
 
-        if "loaded_tables" in st.session_state:
-            st.write("Active Tables:", st.session_state["loaded_tables"])
+                # Cleanup temp file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
 
-    st.subheader("Ask a question about the Kaggle dataset")
+        if "loaded_tables" in st.session_state and st.session_state["loaded_tables"]:
+            st.write("Active Tables:", list(set(st.session_state["loaded_tables"])))
+
+            # Indexing for RAG
+            if st.button("Index Schema for AI"):
+                with st.spinner("Indexing schema..."):
+                    # Extract schema info for RAG
+                    tables_info = []
+                    for table in st.session_state["loaded_tables"]:
+                        try:
+                            columns = con.execute(f"DESCRIBE {table}").fetchall()
+                            col_str = ", ".join([f"{c[0]} ({c[1]})" for c in columns])
+                            tables_info.append(
+                                {"table_name": table, "columns": col_str}
+                            )
+                        except:
+                            pass
+
+                    # Initialize Agent just to access retriever (or make retriever standalone)
+                    # Here we re-instantiate SQLAgent to get access to its retriever for indexing
+                    # Ideally, we'd separate this logic.
+                    temp_agent = SQLAgent(con, api_key if api_key else "dummy")
+                    temp_agent.retriever.index_schema(tables_info)
+                    st.success("Schema indexed! You can now ask questions.")
+
+    # Main Chat Interface
+    st.subheader("Ask a question about your data")
     user_query = st.text_input(
-        "Query",
-        "Which Kaggle Grandmasters have the highest conversion rate from forum posts to competition gold medals?",
+        "Query", "Show me the summary statistics for the users table."
     )
 
     if st.button("Analyze"):
@@ -103,7 +160,7 @@ def main():
             st.error("Please load data first.")
             return
 
-        st.info("Agent is thinking (LangGraph)...")
+        st.info("Agent is thinking...")
 
         # Initialize Agents
         sql_agent = SQLAgent(con, api_key)
@@ -127,25 +184,18 @@ def main():
                 st.info("Generating visualization...")
 
                 # Run Visualization Agent
+                # We use create_chart which handles fallback logic internally
                 viz_config = viz_agent.suggest_visualization(df, user_query)
 
                 if viz_config:
                     st.markdown("### Visualization")
                     st.caption(f"Reasoning: {viz_config.get('reasoning', 'N/A')}")
 
-                    try:
-                        chart_type = viz_config.get("chart_type")
-                        params = viz_config.get("params", {})
-
-                        if chart_type and hasattr(px, chart_type):
-                            fig = getattr(px, chart_type)(df, **params)
-                            st.plotly_chart(fig)
-                        else:
-                            st.warning(
-                                f"Suggested chart type '{chart_type}' is not supported."
-                            )
-                    except Exception as e:
-                        st.error(f"Error creating chart: {e}")
+                    fig = viz_agent.create_chart(df, viz_config)
+                    if fig:
+                        st.plotly_chart(fig)
+                    else:
+                        st.warning("Could not create chart even after fallback.")
                 else:
                     st.warning(
                         "Could not determine a suitable visualization for this data."

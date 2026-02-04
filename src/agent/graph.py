@@ -59,7 +59,22 @@ class SQLAgent:
         return workflow.compile()
 
     def retrieve_node(self, state: AgentState):
+        # If no tables are indexed yet, we can't retrieve.
+        # But we can try to list all tables in DuckDB to be safe if RAG is empty.
+        try:
+            all_tables_df = self.con.execute("SHOW TABLES").df()
+            all_tables = (
+                all_tables_df["name"].tolist() if not all_tables_df.empty else []
+            )
+        except:
+            all_tables = []
+
+        # Try RAG first
         tables = self.retriever.retrieve_relevant_tables(state["question"])
+
+        # If RAG returns nothing (maybe not indexed yet), fallback to all tables
+        if not tables and all_tables:
+            tables = all_tables
 
         # Build schema string only for relevant tables
         schema_str = ""
@@ -77,7 +92,7 @@ class SQLAgent:
         return {"relevant_tables": tables, "schema_context": schema_str, "attempts": 0}
 
     def generate_node(self, state: AgentState):
-        # Few-shot examples to "fine-tune" the agent's understanding of the schema
+        # Generic examples for general SQL generation
         examples = """
         Examples:
 
@@ -89,22 +104,6 @@ class SQLAgent:
         WHERE ua.AchievementType = 'Competitions'
         ORDER BY ua.TotalGold DESC
         LIMIT 5;
-
-        Question: "How many forum posts does each Grandmaster have on average?"
-        SQL:
-        WITH GMs AS (
-            SELECT UserId
-            FROM user_achievements
-            WHERE AchievementType = 'Competitions' AND Tier = 4
-        ),
-        PostCounts AS (
-            SELECT PostUserId, COUNT(*) as PostCount
-            FROM forum_messages
-            GROUP BY PostUserId
-        )
-        SELECT AVG(pc.PostCount) as AvgPosts
-        FROM GMs
-        JOIN PostCounts pc ON GMs.UserId = pc.PostUserId;
         """
 
         template = """You are an expert SQL analyst using DuckDB.
